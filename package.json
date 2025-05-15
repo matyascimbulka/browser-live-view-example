@@ -7,13 +7,32 @@
         "node": ">=18.0.0"
     },
     "dependencies": {
+        "@fastify/cors": "^11.0.1",
+        "@fastify/static": "^8.1.1",
+        "@fastify/websocket": "^11.0.2",
         "apify": "^3.2.6",
+        "cors": "^2.8.5",
         "crawlee": "^3.11.5",
-        "playwright": "*"
+        "express": "^5.1.0",
+        "express-ws": "^5.0.2",
+        "fastify": "^5.3.3",
+        "http-proxy": "^1.18.1",
+        "http-proxy-middleware": "^3.0.5",
+        "http-terminator": "^3.2.0",
+        "httpxy": "^0.1.7",
+        "playwright": "*",
+        "puppeteer": "*",
+        "simple-get": "^4.0.1"
     },
     "devDependencies": {
         "@apify/eslint-config": "^1.0.0",
         "@apify/tsconfig": "^0.1.0",
+        "@types/cors": "^2.8.18",
+        "@types/express": "^5.0.1",
+        "@types/express-ws": "^3.0.5",
+        "@types/http-proxy": "^1.17.16",
+        "@types/simple-get": "^4.0.3",
+        "@types/ws": "^8.18.1",
         "eslint": "^9.26.0",
         "tsx": "^4.6.2",
         "typescript": "^5.3.3",

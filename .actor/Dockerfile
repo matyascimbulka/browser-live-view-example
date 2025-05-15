@@ -17,6 +17,9 @@ RUN npm install --include=dev --audit=false --force
 # in the base image.
 COPY --chown=myuser . ./
 
+# Copy the public directory for build-time needs
+COPY --chown=myuser public ./public
+
 # Install all dependencies and build the project.
 # Don't audit to speed up the installation.
 RUN npm run build
@@ -46,6 +49,9 @@ RUN npm --quiet set progress=false \
 
 # Copy built JS files from builder image
 COPY --from=builder --chown=myuser /home/myuser/dist ./dist
+
+# Copy the public directory from the builder image
+COPY --from=builder --chown=myuser /home/myuser/public ./public
 
 # Next, copy the remaining files and directories with the source code.
 # Since we do this after NPM install, quick build will be really fast

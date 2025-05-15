@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Remote browser</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta property="og:title" content="Remote browser">
+    <meta property="og:description" content="Control your remote browser">
+    <style>
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
+            font-family: "Courier", monospace;
+            height: 100vh;
+            width: 100vw;
+        }
+        #imageContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #imageContainer img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<div id="imageContainer">
+    <p>Waiting for image...</p>
+</div>
+<script>
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${protocol}://${window.location.host}/cdp`);
+    const imageContainer = document.getElementById('imageContainer');
+    let imgElement = null;
+    let requestIdCounter = 1;
+    const pendingRequests = new Map();
+    const eventHandlers = new Map();
+
+
+    socket.addEventListener('open', async () => {
+        console.log('WebSocket connection opened');
+
+        // Function to resize remote browser
+        const resizeRemote = async () => {
+            const rect = imageContainer.getBoundingClientRect();
+            const width = Math.floor(rect.width);
+            const height = Math.floor(rect.height);
+            await sendCdpCommand('Emulation.setDeviceMetricsOverride', {
+                width,
+                height,
+                deviceScaleFactor: window.devicePixelRatio || 1,
+                mobile: false,
+                screenWidth: width,
+                screenHeight: height,
+            });
+        };
+
+        // Initial resize
+        await resizeRemote();
+
+        const version = await sendCdpCommand('Browser.getVersion');
+        console.log('Browser version:', version);
+
+        // Start the screencast
+        await sendCdpCommand('Page.startScreencast', {
+            format: 'jpeg',
+            quality: 100
+        });
+
+        // Listen for window resize and update remote browser
+        window.addEventListener('resize', async () => {
+            await resizeRemote();
+        });
+    });
+
+    const sendCdpCommand = (method, params) => {
+        return new Promise((resolve, reject) => {
+            const requestId = requestIdCounter++;
+
+            try {
+                socket.send(JSON.stringify({ id: requestId, method, params }));
+                pendingRequests.set(requestId, { resolve, reject });
+            } catch (err) {
+                reject(err);
+            }
+        });
+    };
+
+    socket.addEventListener('message', (event) => {
+        try {
+            const message = JSON.parse(event.data);
+
+            if ('id' in message) {
+                console.dir(message);
+                if ('result' in message) {
+                    const callback = pendingRequests.get(message.id);
+                    if (callback) {
+                        callback.resolve(message.result);
+                        pendingRequests.delete(message.id);
+                    }
+                } else {
+                    const callback = pendingRequests.get(message.id);
+                    if (callback) {
+                        callback.reject(new Error('Error: ', message.error.message));
+                        pendingRequests.delete(message.id);
+                    }
+                }
+            } else {
+                const { method, params } = message;
+                const callback = eventHandlers.get(method);
+
+                if (callback) {
+                    callback(params);
+                }
+            }
+        } catch (err) {
+            console.error('Error parsing message:', err);
+        }
+    });
+
+    eventHandlers.set('Page.screencastFrame', async (params) => {
+        const { sessionId, data } = params;
+        const imageUrl = 'data:image/jpeg;base64,' + data;
+        const imageContainer = document.getElementById('imageContainer');
+
+        if (!imgElement) {
+            imgElement = document.createElement('img');
+            imgElement.id = 'image';
+            imageContainer.innerHTML = '';
+            imageContainer.appendChild(imgElement);
+
+            addMouseEventListeners(imgElement);
+        }
+
+        imgElement.src = imageUrl;
+        imgElement.alt = 'Image from screencast';
+
+        await sendCdpCommand('Page.screencastFrameAck', { sessionId });
+    });
+
+    const addMouseEventListeners = (element) => {
+        element.addEventListener('mousedown', async (event) => {
+            const { button, clientX, clientY } = event;
+            event.preventDefault();
+
+            const rect = imgElement.getBoundingClientRect();
+
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x: Math.floor(clientX - rect.left),
+                y: Math.floor(clientY - rect.top),
+                button: button === 0 ? 'left' : button === 1 ? 'middle' : 'right',
+                clickCount: 1,
+            });
+        });
+
+        element.addEventListener('mouseup', async (event) => {
+            const { button, clientX, clientY } = event;
+            event.preventDefault();
+
+            const rect = imgElement.getBoundingClientRect();
+
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x: Math.floor(clientX - rect.left),
+                y: Math.floor(clientY - rect.top),
+                button: button === 0 ? 'left' : button === 1 ? 'middle' : 'right',
+                clickCount: 1,
+            });
+        });
+
+        element.addEventListener('wheel', async (event) => {
+            const { clientX, clientY, deltaX, deltaY } = event;
+            event.preventDefault();
+
+            const rect = imgElement.getBoundingClientRect();
+            const x = Math.floor(clientX - rect.left);
+            const y = Math.floor(clientY - rect.top);
+
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mouseWheel',
+                x,
+                y,
+                deltaX,
+                deltaY,
+                modifiers: 0,
+                button: 'none',
+            }, { passive: false });
+        });
+
+        element.addEventListener('contextmenu', async (event) => {
+            event.preventDefault();
+
+            const rect = imgElement.getBoundingClientRect();
+
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x: Math.floor(event.clientX - rect.left),
+                y: Math.floor(event.clientY - rect.top),
+                button: 'right',
+                clickCount: 1,
+            });
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x: Math.floor(event.clientX - rect.left),
+                y: Math.floor(event.clientY - rect.top),
+                button: 'right',
+                clickCount: 1,
+            });
+        });
+
+        element.addEventListener('mousemove', async (event) => {
+            const { clientX, clientY } = event;
+
+            const rect = imgElement.getBoundingClientRect();
+
+            await sendCdpCommand('Input.dispatchMouseEvent', {
+                type: 'mouseMoved',
+                x: Math.floor(clientX - rect.left),
+                y: Math.floor(clientY - rect.top),
+                button: 'none',
+                clickCount: 0,
+            });
+        });
+    };
+
+    // Keyboard event handling
+    window.addEventListener('keydown', async (event) => {
+        // Ignore modifier keys alone
+        if (event.key.length === 1 || event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Tab') {
+            await sendCdpCommand('Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                key: event.key,
+                code: event.code,
+                keyCode: event.keyCode,
+                windowsVirtualKeyCode: event.keyCode,
+                text: event.key.length === 1 ? event.key : undefined,
+                unmodifiedText: event.key.length === 1 ? event.key : undefined,
+                modifiers: (event.shiftKey ? 8 : 0) | (event.ctrlKey ? 4 : 0) | (event.altKey ? 2 : 0) | (event.metaKey ? 1 : 0),
+            });
+            event.preventDefault();
+        }
+    });
+
+    window.addEventListener('keyup', async (event) => {
+        if (event.key.length === 1 || event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Tab') {
+            await sendCdpCommand('Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                key: event.key,
+                code: event.code,
+                keyCode: event.keyCode,
+                windowsVirtualKeyCode: event.keyCode,
+                modifiers: (event.shiftKey ? 8 : 0) | (event.ctrlKey ? 4 : 0) | (event.altKey ? 2 : 0) | (event.metaKey ? 1 : 0),
+            });
+            event.preventDefault();
+        }
+    });
+
+    window.addEventListener('paste', async (event) => {
+        const text = event.clipboardData.getData('text/plain');
+        if (text) {
+            await sendCdpCommand('Input.insertText', { text });
+            event.preventDefault();
+        }
+    });
+
+    // Close the connection when the page is closed
+    window.addEventListener('beforeunload', function() {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+    });
+</script>
+</body>
+</html>

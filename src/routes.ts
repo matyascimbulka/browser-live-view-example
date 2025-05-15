@@ -1,21 +1,13 @@
-import { createPlaywrightRouter, Dataset } from 'crawlee';
+import { createPlaywrightRouter, createPuppeteerRouter, sleep } from 'crawlee';
 
 export const router = createPlaywrightRouter();
 
-router.addDefaultHandler(async ({ enqueueLinks, log }) => {
-    log.info(`enqueueing new URLs`);
-    await enqueueLinks({
-        globs: ['https://apify.com/*'],
-        label: 'detail',
-    });
-});
+router.addDefaultHandler(async ({ log, page }) => {
+    log.info('Waiting for network idle');
 
-router.addHandler('detail', async ({ request, page, log }) => {
-    const title = await page.title();
-    log.info(`${title}`, { url: request.loadedUrl });
+    log.info('Sleeping for 20 minutes');
+    await page.waitForTimeout(20 * 60 * 1000);
+    // await sleep(20 * 60 * 1000);
 
-    await Dataset.pushData({
-        url: request.loadedUrl,
-        title,
-    });
+    log.info('Done -> closing page');
 });
