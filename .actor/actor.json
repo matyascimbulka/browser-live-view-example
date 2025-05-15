@@ -1,0 +1,12 @@
+{
+    "actorSpecification": 1,
+    "name": "browser-live-view-example",
+    "title": "Browser Live View Example",
+    "description": "This is an example implementation of browser live view.",
+    "version": "0.0",
+    "meta": {
+        "templateId": "ts-crawlee-playwright-chrome"
+    },
+    "input": "./input_schema.json",
+    "dockerfile": "./Dockerfile"
+}
